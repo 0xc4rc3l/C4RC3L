@@ -9,7 +9,6 @@ from colorama import init, Fore, Style
 init(autoreset=True)
 
 class PentestConsole(cmd.Cmd):
-    intro = Fore.CYAN + Style.BRIGHT + 'Welcome to your pentesting framework! Type help or ? to list commands.' + Style.RESET_ALL
     prompt = Fore.RED + Style.BRIGHT + 'C4RC3L > ' + Style.RESET_ALL
 
     global_options = {
@@ -96,18 +95,24 @@ class PentestConsole(cmd.Cmd):
         # Default options (inherits global target)
         options = {
             'target': self.global_options['target'],
-            'ports': '80,443',
             'type': 'tcp',
         }
         def portscan_complete_set(text, line, begidx, endidx):
             opts = [k for k in options.keys() if k.startswith(text)]
+            # Autocomplete for scan type
+            args = line.split()
+            if len(args) >= 3 and args[1] == 'type':
+                return [t for t in ['tcp', 'udp'] if t.startswith(text)]
             return opts
         while True:
             try:
                 sub_cmd = input(module_prompt).strip()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError:
                 print()
                 break
+            except KeyboardInterrupt:
+                print()  # Print newline, stay in module
+                continue
             if sub_cmd in ('exit', 'back', 'quit'):
                 print(Fore.YELLOW + '[*] Exiting portscan module...' + Style.RESET_ALL)
                 break
@@ -129,28 +134,23 @@ class PentestConsole(cmd.Cmd):
                     print(Fore.GREEN + f"[+] Set {parts[1]} to {parts[2]}" + Style.RESET_ALL)
                 else:
                     print(Fore.RED + 'Usage: set <option> <value>' + Style.RESET_ALL)
-            elif sub_cmd == 'show':
+            elif sub_cmd in ('options',):
                 print(Fore.CYAN + 'Current options:' + Style.RESET_ALL)
                 for k, v in options.items():
-                    print(Fore.GREEN + f'  {k:<8} = {v}' + Style.RESET_ALL)
+                    print(Fore.GREEN + f'  {k:<10}    =    {v}' + Style.RESET_ALL)
             elif sub_cmd == 'scan':
                 if not options['target']:
                     print(Fore.RED + 'Set a target first: set target <ip/host>' + Style.RESET_ALL)
                     continue
-                try:
-                    ports = [int(p) for p in options['ports'].split(',')]
-                except Exception:
-                    print(Fore.RED + 'Invalid ports format. Use comma-separated numbers.' + Style.RESET_ALL)
-                    continue
-                run_scan(options['target'], ports, options['type'])
+                run_scan(options['target'], options['type'])
             else:
                 print(Fore.RED + f'Unknown portscan command: {sub_cmd}' + Style.RESET_ALL)
 
     def help_portscan_module(self):
         print(Fore.CYAN + Style.BRIGHT + '\nPortscan Module Options:' + Style.RESET_ALL)
         print(Fore.GREEN + '  scan            - Run a port scan with current options' + Style.RESET_ALL)
-        print(Fore.GREEN + '  set <opt> <val> - Set an option (target, ports, type)' + Style.RESET_ALL)
-        print(Fore.GREEN + '  show            - Show current options' + Style.RESET_ALL)
+        print(Fore.GREEN + '  set <opt> <val> - Set an option (target, type)' + Style.RESET_ALL)
+        print(Fore.GREEN + '  options         - Show current options' + Style.RESET_ALL)
         print(Fore.GREEN + '  clear           - Clear the terminal' + Style.RESET_ALL)
         print(Fore.GREEN + '  help/?          - Show this help menu' + Style.RESET_ALL)
         print(Fore.GREEN + '  exit/back       - Return to main console' + Style.RESET_ALL)
@@ -209,10 +209,18 @@ ascii_banners = [
 ]
 # === END OF ASCII ART BANNERS SECTION ===
 
-def print_banner():
+def print_banner_and_intro():
     print(random.choice(ascii_banners))
+    print(Fore.CYAN + Style.BRIGHT + 'Welcome to your pentesting framework! Type help or ? to list commands.' + Style.RESET_ALL)
 
 if __name__ == '__main__':
-    #os.system('clear')  # Clear the terminal on Linux/macOS
-    print_banner()
-    PentestConsole().cmdloop()
+    print_banner_and_intro()
+    console = PentestConsole()
+    while True:
+        try:
+            console.cmdloop(intro=None)
+            break  # Exit only if do_exit returns True
+        except KeyboardInterrupt:
+            # Print a newline to avoid stacking prompts
+            print()
+            continue
