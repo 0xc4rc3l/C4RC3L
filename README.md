@@ -5,8 +5,6 @@ C4RC3L is a modular, Metasploit-like penetration testing framework written in Py
 ## Features
 
 - **Colorful Console**: Random ASCII art banners and colorized prompts for a modern, hacker-friendly look.
-- **Single Welcome Message**: The welcome message and banner are shown only once at startup, never repeated after Ctrl+C.
-- **Graceful Ctrl+C Handling**: Pressing Ctrl+C in the main console or any module will simply print a new prompt on a fresh line, never exiting or stacking prompts.
 - **Modular Architecture**: Easily add new modules (e.g., port scanning, brute-force, exploits, etc.).
 - **Global Options**: Manage `target`, `url`, and `domain` globally, with validation and normalization.
 - **Module-Specific Prompts**: Each module has its own sub-console and commands.

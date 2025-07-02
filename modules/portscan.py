@@ -4,6 +4,7 @@
 def run_scan(target, scan_type='tcp'):
     import subprocess
     from colorama import Fore, Style
+    import re
     if scan_type == 'udp':
         nmap_args = ['nmap', '-sU', target]
     else:
@@ -12,10 +13,20 @@ def run_scan(target, scan_type='tcp'):
     try:
         result = subprocess.run(nmap_args, capture_output=True, text=True, check=True)
         print(Fore.GREEN + result.stdout + Style.RESET_ALL)
+        if scan_type == 'tcp':
+            # Parse open ports from nmap output
+            open_ports = []
+            for line in result.stdout.splitlines():
+                # Typical nmap output: '22/tcp   open  ssh'
+                m = re.match(r'^(\d+)/tcp\s+open', line)
+                if m:
+                    open_ports.append(int(m.group(1)))
+            return open_ports
     except FileNotFoundError:
         print(Fore.RED + '[!] nmap is not installed or not found in PATH.' + Style.RESET_ALL)
     except subprocess.CalledProcessError as e:
         print(Fore.RED + f"[!] nmap scan failed: {e.stderr}" + Style.RESET_ALL)
+    return []
 
 # Add autocomplete helper for portscan module
 

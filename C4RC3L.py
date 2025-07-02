@@ -97,6 +97,7 @@ class PentestConsole(cmd.Cmd):
             'target': self.global_options['target'],
             'type': 'tcp',
         }
+        ports = []  # Store open ports found in this session
         def portscan_complete_set(text, line, begidx, endidx):
             opts = [k for k in options.keys() if k.startswith(text)]
             # Autocomplete for scan type
@@ -142,7 +143,20 @@ class PentestConsole(cmd.Cmd):
                 if not options['target']:
                     print(Fore.RED + 'Set a target first: set target <ip/host>' + Style.RESET_ALL)
                     continue
-                run_scan(options['target'], options['type'])
+                result = run_scan(options['target'], options['type'])
+                if options['type'] == 'tcp' and isinstance(result, list):
+                    ports.clear()
+                    ports.extend(result)
+                    if ports:
+                        print(Fore.GREEN + f"[+] Open ports found: {', '.join(str(p) for p in ports)}" + Style.RESET_ALL)
+                    else:
+                        print(Fore.YELLOW + '[*] No open ports found.' + Style.RESET_ALL)
+            elif sub_cmd == 'ports':
+                if ports:
+                    print(Fore.CYAN + '[*] Open ports from last scan:' + Style.RESET_ALL)
+                    print(Fore.GREEN + ', '.join(str(p) for p in ports) + Style.RESET_ALL)
+                else:
+                    print(Fore.YELLOW + '[*] No open ports saved. Run scan first.' + Style.RESET_ALL)
             else:
                 print(Fore.RED + f'Unknown portscan command: {sub_cmd}' + Style.RESET_ALL)
 
