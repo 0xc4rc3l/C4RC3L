@@ -5,11 +5,13 @@ C4RC3L is a modular, Metasploit-like penetration testing framework written in Py
 ## Features
 
 - **Colorful Console**: Random ASCII art banners and colorized prompts for a modern, hacker-friendly look.
+- **Single Welcome Message**: The welcome message and banner are shown only once at startup, never repeated after Ctrl+C.
+- **Graceful Ctrl+C Handling**: Pressing Ctrl+C in the main console or any module will simply print a new prompt on a fresh line, never exiting or stacking prompts.
 - **Modular Architecture**: Easily add new modules (e.g., port scanning, brute-force, exploits, etc.).
 - **Global Options**: Manage `target`, `url`, and `domain` globally, with validation and normalization.
 - **Module-Specific Prompts**: Each module has its own sub-console and commands.
 - **Autocomplete & Help**: Tab-completion and horizontal help menus for commands and options.
-- **Port Scanner Module**: Built-in TCP/UDP port scanner as a starting module.
+- **Port Scanner Module**: Built-in TCP/UDP port scanner as a starting module, using nmap.
 - **Clear Command**: Available in all modules and the main console.
 
 ## Getting Started
@@ -17,6 +19,7 @@ C4RC3L is a modular, Metasploit-like penetration testing framework written in Py
 ### Requirements
 - Python 3.7+
 - [colorama](https://pypi.org/project/colorama/)
+- [nmap](https://nmap.org/) (for port scanning module)
 
 Install dependencies:
 ```bash
@@ -39,8 +42,8 @@ python3 C4RC3L.py
 
 ### Portscan Module
 - `scan`: Run a port scan with current options.
-- `set <option> <value>`: Set module option (`target`, `ports`, `type`).
-- `show`: Show current module options.
+- `set <option> <value>`: Set module option (`target`, `type`).
+- `options`: Show current module options.
 - `clear`: Clear the terminal.
 - `exit`/`back`: Return to main console.
 
@@ -50,9 +53,14 @@ C4RC3L > set target 192.168.1.1
 C4RC3L > set url example.com
 C4RC3L > set domain example.com
 C4RC3L > portscan
-C4RC3L [portscan] > set ports 22,80,443
+C4RC3L [portscan] > set type udp
 C4RC3L [portscan] > scan
 ```
+
+## Notes
+- The welcome message and banner are only shown once at startup.
+- Pressing Ctrl+C in the main console or any module will never exit the program or stack prompts; it simply returns to the current prompt.
+- To exit, type `exit` in the main console.
 
 ## Adding Modules
 1. Create a new Python file in `modules/` (e.g., `modules/bruteforce.py`).
