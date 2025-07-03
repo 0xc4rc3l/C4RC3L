@@ -145,12 +145,10 @@ class PentestConsole(cmd.Cmd):
                 import shutil
                 try:
                     shutil.rmtree(ws_dir)
-                    print(Fore.YELLOW + f"[*] Removed stray workflow directory from workspace: {ws_dir}" + Style.RESET_ALL)
-                except Exception as e:
-                    print(Fore.RED + f"[!] Failed to remove {ws_dir}: {e}" + Style.RESET_ALL)
+                except Exception:
+                    pass
         if not os.path.isdir(ws_root):
             os.makedirs(ws_root, exist_ok=True)
-            print(Fore.GREEN + f"[+] Created workspace directory: {ws_root}" + Style.RESET_ALL)
         self.workspace_dir = ws_root
         self.logs_dir = ws_root
         dirs = [os.path.join(cwd, d) for d in self._workflow_dirs]
@@ -158,11 +156,26 @@ class PentestConsole(cmd.Cmd):
         for d in dirs:
             try:
                 os.makedirs(d, exist_ok=True)
-                created.append(d)
-            except Exception as e:
-                print(Fore.RED + f"[!] Failed to create {d}: {e}" + Style.RESET_ALL)
+                created.append(os.path.basename(d))
+            except Exception:
+                pass
         if created:
-            print(Fore.GREEN + f"[+] Initialized directories: {', '.join(created)}" + Style.RESET_ALL)
+            print(Fore.GREEN + f"[+] Initialized: {', '.join(created)}" + Style.RESET_ALL)
+            print(Fore.GREEN + f"[+] Workspace: {os.path.basename(cwd)}" + Style.RESET_ALL)
+            # List files in logs/ and logs/workspace/
+            def list_files(dir_path):
+                try:
+                    files = os.listdir(dir_path)
+                    if files:
+                        print(Fore.CYAN + f"  {os.path.relpath(dir_path, cwd)}/: " + ', '.join(files) + Style.RESET_ALL)
+                    else:
+                        print(Fore.CYAN + f"  {os.path.relpath(dir_path, cwd)}/: (empty)" + Style.RESET_ALL)
+                except Exception:
+                    pass
+            if os.path.isdir(logs_root):
+                list_files(logs_root)
+            if os.path.isdir(ws_root):
+                list_files(ws_root)
             self._workflow_initialized = True
             self._load_state()  # Now load state
             self._save_state()  # Save initial state if not present
@@ -178,7 +191,21 @@ class PentestConsole(cmd.Cmd):
         logs_root = os.path.join(cwd, 'logs')
         ws_root = os.path.join(logs_root, 'workspace')
         if os.path.isdir(ws_root):
-            print(Fore.GREEN + f"[+] Workspace for logs/state: {ws_root}" + Style.RESET_ALL)
+            print(Fore.GREEN + f"[+] Workspace: {os.path.basename(cwd)}" + Style.RESET_ALL)
+            # List files in logs/ and logs/workspace/
+            def list_files(dir_path):
+                try:
+                    files = os.listdir(dir_path)
+                    if files:
+                        print(Fore.CYAN + f"  {os.path.relpath(dir_path, cwd)}/: " + ', '.join(files) + Style.RESET_ALL)
+                    else:
+                        print(Fore.CYAN + f"  {os.path.relpath(dir_path, cwd)}/: (empty)" + Style.RESET_ALL)
+                except Exception:
+                    pass
+            if os.path.isdir(logs_root):
+                list_files(logs_root)
+            if os.path.isdir(ws_root):
+                list_files(ws_root)
         else:
             print(Fore.YELLOW + f"[*] No workspace found. Run 'init' to create logs/workspace for state/logs." + Style.RESET_ALL)
 
@@ -517,88 +544,13 @@ class PentestConsole(cmd.Cmd):
         if not getattr(self, '_workflow_initialized', False):
             print(Fore.RED + '[!] Run init first to initialize workflow directories.' + Style.RESET_ALL)
             return
-        # Placeholder for future web module import and logic
-        import shlex
-        import subprocess
-        module_prompt = Fore.RED + Style.BRIGHT + 'C4RC3L ' + Fore.BLUE + '[web]' + Style.RESET_ALL + ' > '
-        print(Fore.YELLOW + '[*] Entered web module. Type help for options, exit/back to return.' + Style.RESET_ALL)
-        # Default options (inherits global url and domain)
-        options = {
-            'url': self.global_options['url'],
-            'domain': self.global_options['domain'],
-        }
-        if not hasattr(self, '_last_dir'):
-            self._last_dir = os.getcwd()
-        def web_complete_set(text, line, begidx, endidx):
-            opts = [k for k in options.keys() if k.startswith(text)]
-            return opts
-        while True:
-            try:
-                sub_cmd = input(module_prompt).strip()
-            except EOFError:
-                print()
-                break
-            except KeyboardInterrupt:
-                print()  # Print newline, stay in module
-                continue
-            # System commands in module
-            allowed = [
-                'pwd', 'ls', 'cd', 'cat', 'head', 'tail', 'cp', 'mv', 'rm', 'mkdir', 'rmdir', 'touch',
-                'history', 'whoami', 'ifconfig', 'ip', 'ps', 'kill', 'find', 'grep', 'chmod', 'chown',
-                'git', 'searchsploit'
-            ]
-            sys_parts = shlex.split(sub_cmd)
-            if sys_parts and (sys_parts[0] in allowed or (sys_parts[0] == 'ip' and len(sys_parts) > 1 and sys_parts[1] == 'a')):
-                try:
-                    if sys_parts[0] == 'cd':
-                        if len(sys_parts) > 1:
-                            if sys_parts[1] == '-':
-                                current = os.getcwd()
-                                os.chdir(self._last_dir)
-                                print(f"Changed directory to {os.getcwd()}")
-                                self._last_dir = current
-                            else:
-                                current = os.getcwd()
-                                os.chdir(sys_parts[1])
-                                print(f"Changed directory to {os.getcwd()}")
-                                self._last_dir = current
-                        else:
-                            print(os.getcwd())
-                    else:
-                        result = subprocess.run(sys_parts, check=True)
-                except FileNotFoundError:
-                    print(Fore.RED + f"[!] Command not found: {sub_cmd}" + Style.RESET_ALL)
-                except subprocess.CalledProcessError as e:
-                    print(Fore.RED + f"[!] Command failed: {e}" + Style.RESET_ALL)
-                except Exception as e:
-                    print(Fore.RED + f"[!] Error: {e}" + Style.RESET_ALL)
-                continue
-            if sub_cmd in ('exit', 'back', 'quit'):
-                print(Fore.YELLOW + '[*] Exiting web module...' + Style.RESET_ALL)
-                break
-            elif sub_cmd in ('help', '?', ''):
-                self.help_web_module()
-            elif sub_cmd == 'clear':
-                os.system('clear')
-            elif sub_cmd.startswith('set '):
-                # set <option> <value>
-                parts = sub_cmd.split(maxsplit=2)
-                if len(parts) == 2 and parts[1] == '':
-                    print('Options:', ', '.join(web_complete_set('', '', 0, 0)))
-                    continue
-                if len(parts) == 3 and parts[1] in options:
-                    options[parts[1]] = parts[2]
-                    if parts[1] in self.global_options:
-                        self.global_options[parts[1]] = parts[2]
-                    print(Fore.GREEN + f"[+] Set {parts[1]} to {parts[2]}" + Style.RESET_ALL)
-                else:
-                    print(Fore.RED + 'Usage: set <option> <value>' + Style.RESET_ALL)
-            elif sub_cmd in ('options',):
-                print(Fore.CYAN + 'Current options:' + Style.RESET_ALL)
-                for k, v in options.items():
-                    print(Fore.GREEN + f'  {k:<10}    =    {v}' + Style.RESET_ALL)
-            else:
-                print(Fore.RED + f'Unknown web command: {sub_cmd}' + Style.RESET_ALL)
+        # Delegate to the modular WebModule in modules/web.py
+        from modules.web import WebModule
+        web_module = WebModule(self.global_options)
+        # Optionally, allow the module to sync options back:
+        web_module.run()
+        # After run, sync any updated options back (if needed):
+        self.sync_global_options(web_module.options)
 
     def help_web_module(self):
         print(Fore.CYAN + Style.BRIGHT + '\nWeb Module Options:' + Style.RESET_ALL)
@@ -607,6 +559,15 @@ class PentestConsole(cmd.Cmd):
         print(Fore.GREEN + '  clear           - Clear the terminal' + Style.RESET_ALL)
         print(Fore.GREEN + '  help/?          - Show this help menu' + Style.RESET_ALL)
         print(Fore.GREEN + '  exit/back       - Return to main console' + Style.RESET_ALL)
+
+    def sync_global_options(self, new_options):
+        """Update global_options from a module or main script."""
+        self.global_options.update(new_options)
+        self._save_state()
+
+    def get_global_options(self):
+        """Return a copy of global_options for use in modules."""
+        return dict(self.global_options)
 
 # === ASCII ART BANNERS SECTION ===
 # Add your ASCII art banners as strings in this list, using colorama for color if desired.
