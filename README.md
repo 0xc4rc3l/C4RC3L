@@ -55,21 +55,10 @@ C4RC3L [portscan] > set type udp
 C4RC3L [portscan] > scan
 ```
 
-## Notes
-- The welcome message and banner are only shown once at startup.
-- Pressing Ctrl+C in the main console or any module will never exit the program or stack prompts; it simply returns to the current prompt.
-- To exit, type `exit` in the main console.
-
 ## Adding Modules
 1. Create a new Python file in `modules/` (e.g., `modules/bruteforce.py`).
 2. Implement your module logic and expose a function (e.g., `run_bruteforce`).
 3. Integrate the module in `C4RC3L.py` with its own sub-console and options.
-
-## Roadmap
-- More modules (exploit, brute-force, auxiliary, post-exploitation, etc.)
-- Persistent storage for options
-- Advanced scanning (nmap integration, threading)
-- Logging and error handling
 
 ## License
 MIT
