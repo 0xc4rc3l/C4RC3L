@@ -3,6 +3,22 @@ import requests
 from colorama import Fore, Style
 import readline
 
+def color_status(code):
+    try:
+        code = int(code)
+    except Exception:
+        return Fore.WHITE + str(code) + Style.RESET_ALL
+    if 200 <= code < 300:
+        return Fore.GREEN + str(code) + Style.RESET_ALL
+    elif 300 <= code < 400:
+        return Fore.CYAN + str(code) + Style.RESET_ALL
+    elif 400 <= code < 500:
+        return Fore.YELLOW + str(code) + Style.RESET_ALL
+    elif 500 <= code < 600:
+        return Fore.RED + str(code) + Style.RESET_ALL
+    else:
+        return Fore.WHITE + str(code) + Style.RESET_ALL
+
 class WebModule:
     def __init__(self, global_options):
         self.options = {
@@ -41,7 +57,10 @@ class WebModule:
                 elif sub_cmd in ('help', '?', ''):
                     self.help()
                 elif sub_cmd == 'clear':
-                    os.system('clear')
+                    try:
+                        os.system('clear')
+                    except Exception:
+                        print('\n' * 100)
                 elif sub_cmd.startswith('set '):
                     parts = sub_cmd.split(maxsplit=2)
                     if len(parts) == 2 and parts[1] == '':
@@ -90,6 +109,115 @@ class WebModule:
                         print(Fore.WHITE + resp.text[:1000] + ("..." if len(resp.text) > 1000 else "") + Style.RESET_ALL)
                     except Exception as e:
                         print(Fore.RED + f"[!] HTTP POST failed: {e}" + Style.RESET_ALL)
+                elif sub_cmd == 'spider':
+                    url = self.options.get('url') or self.global_options.get('url')
+                    if not url:
+                        print(Fore.RED + '[!] Set url first: set url <url>' + Style.RESET_ALL)
+                        continue
+                    from urllib.parse import urljoin, urlparse
+                    from bs4 import BeautifulSoup
+                    visited = set()
+                    to_visit = [url]
+                    found_links = []
+                    enu_dir = os.path.join(os.getcwd(), 'enu')
+                    if not os.path.isdir(enu_dir):
+                        os.makedirs(enu_dir, exist_ok=True)
+                    spider_out = os.path.join(enu_dir, 'spider.txt')
+                    print(Fore.YELLOW + f"[*] Spidering from {url}..." + Style.RESET_ALL)
+                    # Check for special files
+                    special_files = ['robots.txt', 'sitemap.xml', '.DS_Store']
+                    base = url.split('?', 1)[0].split('#', 1)[0]
+                    if not base.endswith('/'):
+                        base = base.rsplit('/', 1)[0] + '/'
+                    try:
+                        with open(spider_out, 'w') as outf:
+                            # Check special files
+                            for fname in special_files:
+                                special_url = urljoin(base, fname)
+                                try:
+                                    resp = requests.get(special_url, timeout=10, allow_redirects=True)
+                                    code = resp.status_code
+                                    if code == 200:
+                                        print(f"{color_status(code)}:{special_url}")
+                                        outf.write(f"{code}:{special_url}\n")
+                                        found_links.append(special_url)
+                                except Exception:
+                                    pass
+                            # Crawl links
+                            while to_visit:
+                                current = to_visit.pop(0)
+                                if current in visited:
+                                    continue
+                                visited.add(current)
+                                try:
+                                    resp = requests.get(current, timeout=10, allow_redirects=True)
+                                    code = resp.status_code
+                                except Exception as e:
+                                    print(Fore.RED + f"[!] Failed to fetch {current}: {e}" + Style.RESET_ALL)
+                                    continue
+                                print(f"{color_status(code)}:{current}")
+                                outf.write(f"{code}:{current}\n")
+                                found_links.append(current)
+                                if 'text/html' in resp.headers.get('Content-Type', ''):
+                                    soup = BeautifulSoup(resp.text, 'html.parser')
+                                    for tag in soup.find_all(['a', 'link', 'script', 'img', 'form']):
+                                        href = tag.get('href') or tag.get('src') or tag.get('action')
+                                        if not href:
+                                            continue
+                                        new_url = urljoin(current, href)
+                                        # Only crawl same domain
+                                        if urlparse(new_url).netloc == urlparse(url).netloc:
+                                            if new_url not in visited and new_url not in to_visit:
+                                                to_visit.append(new_url)
+                    except Exception as e:
+                        print(Fore.RED + f"[!] Spider failed: {e}" + Style.RESET_ALL)
+                    print(Fore.GREEN + f"[+] Spider complete. {len(found_links)} links written to enu/spider.txt" + Style.RESET_ALL)
+                elif sub_cmd.startswith('!'):
+                    # Run system command
+                    import subprocess
+                    try:
+                        result = subprocess.run(sub_cmd[1:], shell=True, capture_output=True, text=True)
+                        if result.stdout:
+                            print(result.stdout, end='')
+                        if result.stderr:
+                            print(Fore.RED + result.stderr + Style.RESET_ALL, end='')
+                    except Exception as e:
+                        print(Fore.RED + f"[!] System command failed: {e}" + Style.RESET_ALL)
+                elif sub_cmd == 'ls' or sub_cmd == 'ls -la':
+                    import subprocess
+                    try:
+                        result = subprocess.run(['ls', '-la'], capture_output=True, text=True)
+                        if result.stdout:
+                            print(result.stdout, end='')
+                        if result.stderr:
+                            print(Fore.RED + result.stderr + Style.RESET_ALL, end='')
+                    except Exception as e:
+                        print(Fore.RED + f"[!] ls -la failed: {e}" + Style.RESET_ALL)
+                elif sub_cmd.startswith('cat '):
+                    import subprocess
+                    try:
+                        parts = sub_cmd.split(maxsplit=1)
+                        if len(parts) == 2:
+                            filename = parts[1]
+                            result = subprocess.run(['cat', filename], capture_output=True, text=True)
+                            if result.stdout:
+                                print(result.stdout, end='')
+                            if result.stderr:
+                                print(Fore.RED + result.stderr + Style.RESET_ALL, end='')
+                        else:
+                            print(Fore.RED + 'Usage: cat <filename>' + Style.RESET_ALL)
+                    except Exception as e:
+                        print(Fore.RED + f"[!] cat failed: {e}" + Style.RESET_ALL)
+                elif sub_cmd == 'tree':
+                    import subprocess
+                    try:
+                        result = subprocess.run(['tree'], capture_output=True, text=True)
+                        if result.stdout:
+                            print(result.stdout, end='')
+                        if result.stderr:
+                            print(Fore.RED + result.stderr + Style.RESET_ALL, end='')
+                    except Exception as e:
+                        print(Fore.RED + f"[!] tree failed: {e}" + Style.RESET_ALL)
                 else:
                     print(Fore.RED + f'Unknown web command: {sub_cmd}' + Style.RESET_ALL)
         finally:
@@ -103,6 +231,7 @@ class WebModule:
         print(Fore.CYAN + Style.BRIGHT + '\nWeb Module Options:' + Style.RESET_ALL)
         print(Fore.GREEN + '  http_get        - HTTP GET request to the set url' + Style.RESET_ALL)
         print(Fore.GREEN + '  http_post       - HTTP POST request to the set url' + Style.RESET_ALL)
+        print(Fore.GREEN + '  spider          - Crawl links from the set url' + Style.RESET_ALL)
         print(Fore.GREEN + '  set <opt> <val> - Set an option (url, domain)' + Style.RESET_ALL)
         print(Fore.GREEN + '  options         - Show current options' + Style.RESET_ALL)
         print(Fore.GREEN + '  clear           - Clear the terminal' + Style.RESET_ALL)
@@ -110,7 +239,7 @@ class WebModule:
         print(Fore.GREEN + '  exit/back       - Return to main console' + Style.RESET_ALL)
 
     def complete(self, text, line, begidx, endidx):
-        cmds = ['http_get', 'http_post', 'set', 'options', 'clear', 'help', '?', 'exit', 'back']
+        cmds = ['http_get', 'http_post', 'spider', 'set', 'options', 'clear', 'help', '?', 'exit', 'back']
         if begidx == 0:
             return [c for c in cmds if c.startswith(text)]
         if line.strip().startswith('set '):

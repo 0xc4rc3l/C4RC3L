@@ -220,6 +220,7 @@ class PentestConsole(cmd.Cmd):
             ('workspace', 'Show workspace (logs/state) status and path.'),
             ('portscan', 'Enter the portscan module.'),
             ('web', 'Enter the web module.'),
+            ('nuke', 'Delete ALL files and directories (including hidden ones) in the current directory. DANGEROUS!'),
         ]
         print(Fore.CYAN + Style.BRIGHT + '\nAvailable Commands:' + Style.RESET_ALL)
         for cmd_name, desc in commands:
@@ -568,6 +569,32 @@ class PentestConsole(cmd.Cmd):
     def get_global_options(self):
         """Return a copy of global_options for use in modules."""
         return dict(self.global_options)
+
+    def do_nuke(self, arg):
+        """Delete ALL files and directories (including hidden ones) in the current directory. USE WITH EXTREME CAUTION!"""
+        cwd = os.getcwd()
+        print(Fore.RED + Style.BRIGHT + f"[!] WARNING: This will irreversibly delete ALL files and directories (including hidden ones) in {cwd}" + Style.RESET_ALL)
+        confirm = input(Fore.YELLOW + "Type 'NUKE' to confirm: " + Style.RESET_ALL)
+        if confirm != 'NUKE':
+            print(Fore.CYAN + "Aborted." + Style.RESET_ALL)
+            return
+        import glob, shutil
+        # Remove all non-hidden and hidden files/dirs except . and ..
+        patterns = ['*', '.[!.]*', '.??*']
+        deleted = 0
+        for pattern in patterns:
+            for path in glob.glob(pattern):
+                if path in ('.', '..'):
+                    continue
+                try:
+                    if os.path.isdir(path):
+                        shutil.rmtree(path)
+                    else:
+                        os.remove(path)
+                    deleted += 1
+                except Exception as e:
+                    print(Fore.YELLOW + f"[!] Could not delete {path}: {e}" + Style.RESET_ALL)
+        print(Fore.GREEN + f"[+] Nuke complete. {deleted} items deleted." + Style.RESET_ALL)
 
 # === ASCII ART BANNERS SECTION ===
 # Add your ASCII art banners as strings in this list, using colorama for color if desired.
