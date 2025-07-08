@@ -198,6 +198,21 @@ class WebModule:
                                         outpath = os.path.join(extras_dir, fname)
                                         with open(outpath, 'wb') as f:
                                             f.write(resp.content)
+                                        # If robots.txt, parse for directories and add to to_visit
+                                        if fname == 'robots.txt':
+                                            try:
+                                                lines = resp.text.splitlines()
+                                                for line in lines:
+                                                    line = line.strip()
+                                                    if line.lower().startswith('disallow:') or line.lower().startswith('allow:'):
+                                                        path = line.split(':', 1)[1].strip()
+                                                        if path and path != '/':
+                                                            # Append to front of set url
+                                                            full_url = urljoin(url, path)
+                                                            if full_url not in to_visit and full_url not in visited:
+                                                                to_visit.append(full_url)
+                                            except Exception as e:
+                                                print(Fore.RED + f"[!] Failed to parse robots.txt: {e}" + Style.RESET_ALL)
                                 except Exception:
                                     pass
                             # Crawl links
@@ -417,6 +432,29 @@ class WebModule:
                                 print(Fore.RED + f"[!] Could not read {filename}: {e}" + Style.RESET_ALL)
                     else:
                         print(Fore.YELLOW + '[*] No extras directory found.' + Style.RESET_ALL)
+                elif sub_cmd.strip() == 'comments':
+                    base_dir = os.path.join(os.getcwd(), 'enu', 'web')
+                    found_any = False
+                    def print_comments_from_file(filepath, pattern, filename):
+                        nonlocal found_any
+                        try:
+                            with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                                content = f.read()
+                                matches = re.findall(pattern, content, flags=re.DOTALL | re.MULTILINE)
+                                if matches:
+                                    found_any = True
+                                    print(Fore.GREEN + f"\n--- {filename} ---\n" + Style.RESET_ALL)
+                                    for m in matches:
+                                        print(Fore.MAGENTA + m.strip() + Style.RESET_ALL)
+                        except Exception as e:
+                            print(Fore.RED + f"[!] Could not read {filename}: {e}" + Style.RESET_ALL)
+                    # Patterns
+                    html_pat = r'<!--.*?-->'
+                    css_pat = r'/\*.*?\*/'
+                    js_pat1 = r'/\*.*?\*/'
+                    js_pat2 = r'//.*?$'
+                    xml_pat = r'<!--.*?-->'
+                    txt_pat = r'(^#.*$)'
                     # HTML
                     html_dir = os.path.join(base_dir, 'html')
                     if os.path.isdir(html_dir):
@@ -445,6 +483,8 @@ class WebModule:
                                 print_comments_from_file(extras_path, xml_pat, filename)
                             elif filename.endswith('.txt'):
                                 print_comments_from_file(extras_path, txt_pat, filename)
+                    if not found_any:
+                        print(Fore.YELLOW + '[*] No comments found.' + Style.RESET_ALL)
                 else:
                     print(Fore.RED + f'Unknown web command: {sub_cmd}' + Style.RESET_ALL)
         finally:
