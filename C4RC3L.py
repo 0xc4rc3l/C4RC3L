@@ -54,8 +54,10 @@ class PentestConsole(cmd.Cmd):
             if 'global_options' in state:
                 self.global_options.update(state['global_options'])
             self._portscan_ports = state.get('portscan_ports', [])
+            self._portscan_service_results = state.get('portscan_service_results', None)
         except Exception:
             self._portscan_ports = []
+            self._portscan_service_results = None
 
     def _save_state(self):
         if not self._workflow_initialized:
@@ -64,6 +66,7 @@ class PentestConsole(cmd.Cmd):
             state = {
                 'global_options': self.global_options,
                 'portscan_ports': getattr(self, '_portscan_ports', []),
+                'portscan_service_results': getattr(self, '_portscan_service_results', None),
             }
             with open(self.state_file, 'w') as f:
                 json.dump(state, f, indent=2)
@@ -457,6 +460,14 @@ class PentestConsole(cmd.Cmd):
                 print(Fore.CYAN + 'Current options:' + Style.RESET_ALL)
                 for k, v in options.items():
                     print(Fore.GREEN + f'  {k:<10}    =    {v}' + Style.RESET_ALL)
+            elif sub_cmd in ('options for results', 'results'):
+                self._load_state()
+                service_results = getattr(self, '_portscan_service_results', None)
+                if service_results:
+                    print(Fore.CYAN + '[*] Latest service scan results:' + Style.RESET_ALL)
+                    print(Fore.GREEN + service_results + Style.RESET_ALL)
+                else:
+                    print(Fore.YELLOW + '[*] No service scan results saved. Run service scan first.' + Style.RESET_ALL)
             elif sub_cmd == 'scan':
                 if not options['target']:
                     print(Fore.RED + 'Set a target first: set target <ip/host>' + Style.RESET_ALL)
@@ -519,8 +530,46 @@ class PentestConsole(cmd.Cmd):
                 try:
                     result = subprocess.run(nmap_args, capture_output=True, text=True, check=True)
                     print(Fore.GREEN + result.stdout + Style.RESET_ALL)
+                    # Save latest service results
+                    self._portscan_service_results = result.stdout
+                    self._save_state()
                     if len(parts) == 2 and parts[1]:
                         print(Fore.GREEN + f"[+] Results saved as {out_path}.nmap/.xml/.gnmap" + Style.RESET_ALL)
+                    # --- Auto-searchsploit for found services ---
+                    import re
+                    nmap_out = result.stdout
+                    # Find lines like: 80/tcp   open  http    Apache httpd 2.4.29 ((Ubuntu))
+                    service_lines = [line for line in nmap_out.splitlines() if re.match(r"^\d+/\w+\s+open", line)]
+                    found_services = set()
+                    for line in service_lines:
+                        # Extract service name and version (columns after 'open')
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            # e.g. ['80/tcp', 'open', 'http', 'Apache', 'httpd', '2.4.29', '((Ubuntu))']
+                            # Service name is parts[2], version is the rest
+                            service = parts[2]
+                            version = ' '.join(parts[3:]) if len(parts) > 3 else ''
+                            if version:
+                                found_services.add(f"{service} {version}".strip())
+                            else:
+                                found_services.add(service)
+                        elif len(parts) == 3:
+                            found_services.add(parts[2])
+                    if found_services:
+                        print(Fore.CYAN + '[*] Running searchsploit for discovered services:' + Style.RESET_ALL)
+                        for svc in found_services:
+                            print(Fore.YELLOW + f"[*] searchsploit {svc}" + Style.RESET_ALL)
+                            try:
+                                searchsploit_result = subprocess.run(['searchsploit', svc], capture_output=True, text=True)
+                                if searchsploit_result.stdout:
+                                    print(Fore.WHITE + searchsploit_result.stdout + Style.RESET_ALL)
+                                if searchsploit_result.stderr:
+                                    print(Fore.YELLOW + searchsploit_result.stderr + Style.RESET_ALL)
+                            except Exception as e:
+                                print(Fore.RED + f"[!] searchsploit failed for {svc}: {e}" + Style.RESET_ALL)
+                    else:
+                        print(Fore.YELLOW + '[*] No services found to run searchsploit.' + Style.RESET_ALL)
+                    # --- End auto-searchsploit ---
                 except FileNotFoundError:
                     print(Fore.RED + '[!] nmap is not installed or not found in PATH.' + Style.RESET_ALL)
                 except subprocess.CalledProcessError as e:
