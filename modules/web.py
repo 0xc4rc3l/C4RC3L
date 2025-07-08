@@ -28,6 +28,8 @@ class WebModule:
         }
         self.global_options = global_options
         self._last_dir = os.getcwd()
+        # Initialize user_creds as an empty list
+        self.user_creds = []
 
     def run(self):
         import shlex
@@ -154,6 +156,7 @@ class WebModule:
                     visited = set()
                     to_visit = [url]
                     found_links = []
+                    login_pages = []
                     enu_dir = os.path.join(os.getcwd(), 'enu')
                     web_dir = os.path.join(enu_dir, 'web')
                     html_dir = os.path.join(web_dir, 'html')
@@ -237,6 +240,29 @@ class WebModule:
                                     outpath = os.path.join(html_dir, fname if fname.endswith('.html') else fname + '.html')
                                     with open(outpath, 'wb') as f:
                                         f.write(resp.content)
+                                    # Detect login page
+                                    try:
+                                        soup = BeautifulSoup(resp.text, 'html.parser')
+                                        # Check URL for login keywords
+                                        login_keywords = ['login', 'signin', 'auth', 'password']
+                                        url_lower = current.lower()
+                                        if any(kw in url_lower for kw in login_keywords):
+                                            login_pages.append(current)
+                                        # Check forms for login fields
+                                        for form in soup.find_all('form'):
+                                            action = form.get('action', '').lower()
+                                            if any(kw in action for kw in login_keywords):
+                                                login_pages.append(current)
+                                                break
+                                            for inp in form.find_all('input'):
+                                                name = inp.get('name', '').lower()
+                                                id_ = inp.get('id', '').lower()
+                                                typ = inp.get('type', '').lower()
+                                                if any(kw in name for kw in login_keywords) or any(kw in id_ for kw in login_keywords) or typ == 'password':
+                                                    login_pages.append(current)
+                                                    break
+                                    except Exception:
+                                        pass
                                 elif ctype == 'text/css' or fname.endswith('.css'):
                                     outpath = os.path.join(css_dir, fname if fname.endswith('.css') else fname + '.css')
                                     with open(outpath, 'wb') as f:
@@ -247,19 +273,215 @@ class WebModule:
                                         f.write(resp.content)
                                 # Parse HTML for more links
                                 if 'text/html' in ctype:
-                                    soup = BeautifulSoup(resp.text, 'html.parser')
-                                    for tag in soup.find_all(['a', 'link', 'script', 'img', 'form']):
-                                        href = tag.get('href') or tag.get('src') or tag.get('action')
-                                        if not href:
-                                            continue
-                                        new_url = urljoin(current, href)
-                                        # Only crawl same domain
-                                        if urlparse(new_url).netloc == urlparse(url).netloc:
-                                            if new_url not in visited and new_url not in to_visit:
-                                                to_visit.append(new_url)
+                                    try:
+                                        soup = BeautifulSoup(resp.text, 'html.parser')
+                                        for tag in soup.find_all(['a', 'link', 'script', 'img', 'form']):
+                                            href = tag.get('href') or tag.get('src') or tag.get('action')
+                                            if not href:
+                                                continue
+                                            new_url = urljoin(current, href)
+                                            # Only crawl same domain
+                                            if urlparse(new_url).netloc == urlparse(url).netloc:
+                                                if new_url not in visited and new_url not in to_visit:
+                                                    to_visit.append(new_url)
+                                    except Exception:
+                                        pass
                     except Exception as e:
                         print(Fore.RED + f"[!] Spider failed: {e}" + Style.RESET_ALL)
                     print(Fore.GREEN + f"[+] Spider complete. {len(found_links)} links written to enu/spider.txt" + Style.RESET_ALL)
+                    if login_pages:
+                        print(Fore.MAGENTA + f"[!] Possible login page(s) found:" + Style.RESET_ALL)
+                        for lp in set(login_pages):
+                            print(Fore.MAGENTA + f"    {lp}" + Style.RESET_ALL)
+                        # Use default credentials list
+                        default_creds = [
+                            ('admin', 'admin'),
+                            ('admin', 'password'),
+                            ('root', 'root'),
+                            ('user', 'user'),
+                            ('test', 'test'),
+                            ('administrator', 'admin'),
+                            ('admin', '1234'),
+                            ('admin', '12345'),
+                            ('admin', '123456'),
+                            ('admin', ''),
+                            ('', 'admin'),
+                        ]
+                        # Add user-supplied creds if any
+                        if self.user_creds:
+                            default_creds = self.user_creds + default_creds
+                        for login_url in set(login_pages):
+                            try:
+                                resp = requests.get(login_url, timeout=10)
+                                soup = BeautifulSoup(resp.text, 'html.parser')
+                                for form in soup.find_all('form'):
+                                    action = form.get('action')
+                                    method = form.get('method', 'post').lower()
+                                    form_url = urljoin(login_url, action) if action else login_url
+                                    payload = {}
+                                    user_field = pass_field = None
+                                    # Try to detect username and password fields
+                                    for inp in form.find_all('input'):
+                                        name = inp.get('name')
+                                        typ = inp.get('type', '').lower()
+                                        if not name:
+                                            continue
+                                        if typ == 'password' or 'pass' in name.lower():
+                                            pass_field = name
+                                        elif typ in ('text', 'email') or 'user' in name.lower() or 'email' in name.lower():
+                                            user_field = name
+                                    if user_field and pass_field:
+                                        for username, password in default_creds:
+                                            test_payload = {}
+                                            for inp in form.find_all('input'):
+                                                name = inp.get('name')
+                                                typ = inp.get('type', '').lower()
+                                                if not name:
+                                                    continue
+                                                if name == user_field:
+                                                    test_payload[name] = username
+                                                elif name == pass_field:
+                                                    test_payload[name] = password
+                                                else:
+                                                    test_payload[name] = inp.get('value', '')
+                                            print(Fore.YELLOW + f"[*] Trying {username}:{password} on {form_url}..." + Style.RESET_ALL)
+                                            try:
+                                                resp = requests.post(form_url, data=test_payload, timeout=10, allow_redirects=False)
+                                                # Check for redirect
+                                                if resp.is_redirect or resp.is_permanent_redirect or resp.status_code in (301, 302, 303, 307, 308):
+                                                    location = resp.headers.get('Location')
+                                                    print(Fore.CYAN + f"[!] Login attempt to {form_url} with {username}:{password} resulted in a redirect to: {location}" + Style.RESET_ALL)
+                                                    # Follow the redirect
+                                                    if location:
+                                                        redirect_url = urljoin(form_url, location)
+                                                        try:
+                                                            redirect_resp = requests.get(redirect_url, timeout=10)
+                                                            print(Fore.YELLOW + '[*] Redirect Response Headers:' + Style.RESET_ALL)
+                                                            for k, v in redirect_resp.headers.items():
+                                                                print(Fore.WHITE + f"  {k}: {v}" + Style.RESET_ALL)
+                                                            if redirect_resp.cookies:
+                                                                print(Fore.YELLOW + '[*] Redirect Cookies:' + Style.RESET_ALL)
+                                                                for c in redirect_resp.cookies:
+                                                                    print(Fore.WHITE + f"  {c.name}={c.value}" + Style.RESET_ALL)
+                                                        except Exception as e:
+                                                            print(Fore.RED + f"[!] Error following redirect: {e}" + Style.RESET_ALL)
+                                                    # Also show cookies set in the redirect response
+                                                    if resp.cookies:
+                                                        print(Fore.YELLOW + '[*] Cookies set on redirect:' + Style.RESET_ALL)
+                                                        for c in resp.cookies:
+                                                            print(Fore.WHITE + f"  {c.name}={c.value}" + Style.RESET_ALL)
+                                                    break
+                                                elif resp.status_code == 200 and not re.search(r'fail|invalid|error|incorrect', resp.text, re.I):
+                                                    print(Fore.GREEN + f"[+] Login attempt to {form_url} with {username}:{password} may have succeeded!" + Style.RESET_ALL)
+                                                    # Display response headers
+                                                    print(Fore.YELLOW + '[*] Response Headers:' + Style.RESET_ALL)
+                                                    for k, v in resp.headers.items():
+                                                        print(Fore.WHITE + f"  {k}: {v}" + Style.RESET_ALL)
+                                                    # Display cookies
+                                                    if resp.cookies:
+                                                        print(Fore.YELLOW + '[*] Cookies:' + Style.RESET_ALL)
+                                                        for c in resp.cookies:
+                                                            print(Fore.WHITE + f"  {c.name}={c.value}" + Style.RESET_ALL)
+                                                    break
+                                                else:
+                                                    print(Fore.RED + f"[-] Login attempt to {form_url} with {username}:{password} failed or uncertain." + Style.RESET_ALL)
+                                            except Exception as e:
+                                                print(Fore.RED + f"[!] Login request error: {e}" + Style.RESET_ALL)
+                                    else:
+                                        print(Fore.YELLOW + f"[!] Could not determine username/password fields for {form_url}" + Style.RESET_ALL)
+                            except Exception as e:
+                                print(Fore.RED + f"[!] Could not test login for {login_url}: {e}" + Style.RESET_ALL)
+                elif sub_cmd == 'login':
+                    url = self.options.get('url') or self.global_options.get('url')
+                    if not url:
+                        print(Fore.RED + '[!] Set url first: set url <url>' + Style.RESET_ALL)
+                        return
+                    from urllib.parse import urljoin
+                    from bs4 import BeautifulSoup
+                    # Try login on the set url with user_creds only
+                    if not self.user_creds:
+                        print(Fore.YELLOW + '[*] No user credentials added. Use add_creds <user> <pass> first.' + Style.RESET_ALL)
+                        return
+                    try:
+                        resp = requests.get(url, timeout=10)
+                        soup = BeautifulSoup(resp.text, 'html.parser')
+                        found_form = False
+                        for form in soup.find_all('form'):
+                            action = form.get('action')
+                            method = form.get('method', 'post').lower()
+                            form_url = urljoin(url, action) if action else url
+                            user_field = pass_field = None
+                            for inp in form.find_all('input'):
+                                name = inp.get('name')
+                                typ = inp.get('type', '').lower()
+                                if not name:
+                                    continue
+                                if typ == 'password' or 'pass' in name.lower():
+                                    pass_field = name
+                                elif typ in ('text', 'email') or 'user' in name.lower() or 'email' in name.lower():
+                                    user_field = name
+                            if user_field and pass_field:
+                                found_form = True
+                                for username, password in self.user_creds:
+                                    test_payload = {}
+                                    for inp in form.find_all('input'):
+                                        name = inp.get('name')
+                                        typ = inp.get('type', '').lower()
+                                        if not name:
+                                            continue
+                                        if name == user_field:
+                                            test_payload[name] = username
+                                        elif name == pass_field:
+                                            test_payload[name] = password
+                                        else:
+                                            test_payload[name] = inp.get('value', '')
+                                    print(Fore.YELLOW + f"[*] Trying {username}:{password} on {form_url}..." + Style.RESET_ALL)
+                                    try:
+                                        if method == 'post':
+                                            login_resp = requests.post(form_url, data=test_payload, timeout=10, allow_redirects=False)
+                                        else:
+                                            login_resp = requests.get(form_url, params=test_payload, timeout=10, allow_redirects=False)
+                                        print(Fore.CYAN + f"[Status] HTTP {login_resp.status_code}" + Style.RESET_ALL)
+                                        if login_resp.is_redirect or login_resp.is_permanent_redirect or login_resp.status_code in (301, 302, 303, 307, 308):
+                                            location = login_resp.headers.get('Location')
+                                            print(Fore.CYAN + f"[!] Login attempt to {form_url} with {username}:{password} resulted in a redirect to: {location}" + Style.RESET_ALL)
+                                            if location:
+                                                redirect_url = urljoin(form_url, location)
+                                                try:
+                                                    redirect_resp = requests.get(redirect_url, timeout=10)
+                                                    print(Fore.YELLOW + '[*] Redirect Response Headers:' + Style.RESET_ALL)
+                                                    for k, v in redirect_resp.headers.items():
+                                                        print(Fore.WHITE + f"  {k}: {v}" + Style.RESET_ALL)
+                                                    if redirect_resp.cookies:
+                                                        print(Fore.YELLOW + '[*] Redirect Cookies:' + Style.RESET_ALL)
+                                                        for c in redirect_resp.cookies:
+                                                            print(Fore.WHITE + f"  {c.name}={c.value}" + Style.RESET_ALL)
+                                                except Exception as e:
+                                                    print(Fore.RED + f"[!] Error following redirect: {e}" + Style.RESET_ALL)
+                                            if login_resp.cookies:
+                                                print(Fore.YELLOW + '[*] Cookies set on redirect:' + Style.RESET_ALL)
+                                                for c in login_resp.cookies:
+                                                    print(Fore.WHITE + f"  {c.name}={c.value}" + Style.RESET_ALL)
+                                            break
+                                        elif login_resp.status_code == 200 and not re.search(r'fail|invalid|error|incorrect', login_resp.text, re.I):
+                                            print(Fore.GREEN + f"[+] Login attempt to {form_url} with {username}:{password} may have succeeded!" + Style.RESET_ALL)
+                                            print(Fore.YELLOW + '[*] Response Headers:' + Style.RESET_ALL)
+                                            for k, v in login_resp.headers.items():
+                                                print(Fore.WHITE + f"  {k}: {v}" + Style.RESET_ALL)
+                                            if login_resp.cookies:
+                                                print(Fore.YELLOW + '[*] Cookies:' + Style.RESET_ALL)
+                                                for c in login_resp.cookies:
+                                                    print(Fore.WHITE + f"  {c.name}={c.value}" + Style.RESET_ALL)
+                                            break
+                                        else:
+                                            print(Fore.RED + f"[-] Login attempt to {form_url} with {username}:{password} failed or uncertain." + Style.RESET_ALL)
+                                    except Exception as e:
+                                        print(Fore.RED + f"[!] Login request error: {e}" + Style.RESET_ALL)
+                                break
+                        if not found_form:
+                            print(Fore.YELLOW + '[*] No login form found on the page.' + Style.RESET_ALL)
+                    except Exception as e:
+                        print(Fore.RED + f"[!] Could not test login for {url}: {e}" + Style.RESET_ALL)
                 elif sub_cmd.startswith('!'):
                     # Run system command
                     import subprocess
@@ -318,7 +540,11 @@ class WebModule:
                                     fname = os.path.basename(url.split('?', 1)[0].split('#', 1)[0])
                                     url_map[fname] = url
                     def highlight_html_comments(text):
-                        return re.sub(r'(<!--.*?-->)', lambda m: Fore.MAGENTA + m.group(1) + Style.RESET_ALL, text, flags=re.DOTALL)
+                        # Highlight HTML comments
+                        text = re.sub(r'(<!--.*?-->)', lambda m: Fore.MAGENTA + m.group(1) + Style.RESET_ALL, text, flags=re.DOTALL)
+                        # Highlight <script>...</script> blocks
+                        text = re.sub(r'(<script.*?>.*?</script>)', lambda m: Fore.YELLOW + m.group(1) + Style.RESET_ALL, text, flags=re.DOTALL|re.IGNORECASE)
+                        return text
                     if os.path.isdir(html_dir):
                         files = sorted(os.listdir(html_dir))
                         if not files:
@@ -485,6 +711,14 @@ class WebModule:
                                 print_comments_from_file(extras_path, txt_pat, filename)
                     if not found_any:
                         print(Fore.YELLOW + '[*] No comments found.' + Style.RESET_ALL)
+                elif sub_cmd.startswith('add_creds '):
+                    parts = sub_cmd.split(maxsplit=2)
+                    if len(parts) != 3:
+                        print(Fore.RED + 'Usage: add_creds <user> <pass>' + Style.RESET_ALL)
+                        continue
+                    user, passwd = parts[1], parts[2]
+                    self.user_creds.insert(0, (user, passwd))
+                    print(Fore.GREEN + f"[+] Added credentials: {user}:{passwd}" + Style.RESET_ALL)
                 else:
                     print(Fore.RED + f'Unknown web command: {sub_cmd}' + Style.RESET_ALL)
         finally:
@@ -496,32 +730,45 @@ class WebModule:
 
     def help(self):
         print(Fore.CYAN + Style.BRIGHT + '\nWeb Module Options:' + Style.RESET_ALL)
-        print(Fore.GREEN + '  http_get        - HTTP GET request to the set url' + Style.RESET_ALL)
-        print(Fore.GREEN + '  http_post       - HTTP POST request to the set url' + Style.RESET_ALL)
-        print(Fore.GREEN + '  http_head       - HTTP HEAD request to the set url' + Style.RESET_ALL)
-        print(Fore.GREEN + '  spider          - Crawl links from the set url and save files' + Style.RESET_ALL)
-        print(Fore.GREEN + '  html            - Show all HTML files found, with URLs and highlighted comments' + Style.RESET_ALL)
-        print(Fore.GREEN + '  css             - Show all CSS files found, with URLs and highlighted comments' + Style.RESET_ALL)
-        print(Fore.GREEN + '  js              - Show all JS files found, with URLs and highlighted comments' + Style.RESET_ALL)
-        print(Fore.GREEN + '  extras          - Show all extra files (robots.txt, sitemap.xml, etc) with highlighted comments' + Style.RESET_ALL)
-        print(Fore.GREEN + '  comments         - Show all comments from HTML, CSS, JS, and extras files' + Style.RESET_ALL)
-        print(Fore.GREEN + '  set <opt> <val> - Set an option (url, domain)' + Style.RESET_ALL)
-        print(Fore.GREEN + '  options         - Show current options' + Style.RESET_ALL)
-        print(Fore.GREEN + '  clear           - Clear the terminal' + Style.RESET_ALL)
-        print(Fore.GREEN + '  ls, ls -la      - List files in the current directory' + Style.RESET_ALL)
-        print(Fore.GREEN + '  cat <file>      - Show contents of a file' + Style.RESET_ALL)
-        print(Fore.GREEN + '  tree            - Show directory tree' + Style.RESET_ALL)
-        print(Fore.GREEN + '  !<cmd>          - Run any system command (e.g. !whoami)' + Style.RESET_ALL)
-        print(Fore.GREEN + '  help/?          - Show this help menu' + Style.RESET_ALL)
-        print(Fore.GREEN + '  exit/back       - Return to main console' + Style.RESET_ALL)
+        print(Fore.GREEN + '  http_get' + Style.RESET_ALL + Fore.WHITE + '        - HTTP GET request to the set url' + Style.RESET_ALL)
+        print(Fore.GREEN + '  http_post' + Style.RESET_ALL + Fore.WHITE + '       - HTTP POST request to the set url' + Style.RESET_ALL)
+        print(Fore.GREEN + '  http_head' + Style.RESET_ALL + Fore.WHITE + '       - HTTP HEAD request to the set url' + Style.RESET_ALL)
+        print(Fore.GREEN + '  http_options' + Style.RESET_ALL + Fore.WHITE + '    - HTTP OPTIONS request to the set url' + Style.RESET_ALL)
+        print(Fore.GREEN + '  spider' + Style.RESET_ALL + Fore.WHITE + '          - Crawl links from the set url and save files' + Style.RESET_ALL)
+        print(Fore.GREEN + '  html' + Style.RESET_ALL + Fore.WHITE + '            - Show all HTML files found, with URLs and highlighted comments' + Style.RESET_ALL)
+        print(Fore.GREEN + '  css' + Style.RESET_ALL + Fore.WHITE + '             - Show all CSS files found, with URLs and highlighted comments' + Style.RESET_ALL)
+        print(Fore.GREEN + '  js' + Style.RESET_ALL + Fore.WHITE + '              - Show all JS files found, with URLs and highlighted comments' + Style.RESET_ALL)
+        print(Fore.GREEN + '  extras' + Style.RESET_ALL + Fore.WHITE + '          - Show all extra files (robots.txt, sitemap.xml, etc) with highlighted comments' + Style.RESET_ALL)
+        print(Fore.GREEN + '  comments' + Style.RESET_ALL + Fore.WHITE + '        - Show all comments from HTML, CSS, JS, and extras files' + Style.RESET_ALL)
+        print(Fore.GREEN + '  set <opt> <val>' + Style.RESET_ALL + Fore.WHITE + ' - Set an option (url, domain)' + Style.RESET_ALL)
+        print(Fore.GREEN + '  options' + Style.RESET_ALL + Fore.WHITE + '         - Show current options' + Style.RESET_ALL)
+        print(Fore.GREEN + '  clear' + Style.RESET_ALL + Fore.WHITE + '           - Clear the terminal' + Style.RESET_ALL)
+        print(Fore.GREEN + '  ls, ls -la' + Style.RESET_ALL + Fore.WHITE + '      - List files in the current directory' + Style.RESET_ALL)
+        print(Fore.GREEN + '  cat <file>' + Style.RESET_ALL + Fore.WHITE + '      - Show contents of a file' + Style.RESET_ALL)
+        print(Fore.GREEN + '  tree' + Style.RESET_ALL + Fore.WHITE + '           - Show directory tree' + Style.RESET_ALL)
+        print(Fore.GREEN + '  !<cmd>' + Style.RESET_ALL + Fore.WHITE + '          - Run any system command (e.g. !whoami)' + Style.RESET_ALL)
+        print(Fore.GREEN + '  exit/back' + Style.RESET_ALL + Fore.WHITE + '       - Return to main console' + Style.RESET_ALL)
+        print(Fore.GREEN + '  login' + Style.RESET_ALL + Fore.WHITE + '            - Attempt login with only added credentials' + Style.RESET_ALL)
 
     def complete(self, text, line, begidx, endidx):
-        cmds = ['http_get', 'http_post', 'http_head', 'spider', 'set', 'options', 'clear', 'help', '?', 'exit', 'back']
+        cmds = [
+            'http_get', 'http_post', 'http_head', 'http_options', 'spider', 'set', 'options', 'clear',
+            'help', '?', 'exit', 'back', 'ls', 'ls -la', 'cat', 'tree', 'html', 'css', 'js', 'extras', 'comments', 'add_creds', 'login'
+        ]
+        # Tab complete for command
         if begidx == 0:
             return [c for c in cmds if c.startswith(text)]
+        # Tab complete for set command options
         if line.strip().startswith('set '):
             opts = [k for k in self.options.keys() if k.startswith(text)]
             return opts
+        # Tab complete for cat command (filenames in current dir)
+        if line.strip().startswith('cat '):
+            try:
+                files = os.listdir('.')
+                return [f for f in files if f.startswith(text)]
+            except Exception:
+                return []
         return []
 
     def _tab_complete(self, text, state):
