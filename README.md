@@ -1,99 +1,51 @@
-# C4RC3L Pentesting Framework
-
-C4RC3L is a modular, Metasploit-like pentesting framework written in Python, designed for workflow-driven penetration testing with a robust, user-friendly console interface.
+# C4RC3L Web Module
 
 ## Features
 
-- **Console Interface**: Colorful, msfconsole-inspired prompt with random ASCII art banners at startup.
-- **Robust Ctrl+C Handling**: All prompts and modules handle Ctrl+C gracefully.
-- **Global Options**: Set and persist global options (`target`, `url`, `domain`, `dir_list`, `sub_list`, `file_list`) with validation and autocomplete.
-- **Module System**: Modular design with a portscan module and web module entry point. Easy to extend.
-- **System Command Support**: Run common Linux commands (`ls`, `cd`, `cat`, `git`, `searchsploit`, etc.) from any prompt, with tab-completion for files/dirs. Output is shown exactly as in a shell, with no extra error messages.
-- **Workspace & Workflow**:
-  - Workflow directories (`enu`, `files`, `exploits`, `loot`) are always in the project root.
-  - All logs and persistent state are stored in `logs/workspace`.
-  - `init` command sets up the correct directory structure and cleans up any misplaced workflow dirs.
-  - `workspace` command shows workspace status and path.
-- **Persistence**: Global options and portscan results are saved in `logs/workspace/c4rc3l_state.json`.
-- **Portscan Module**:
-  - TCP/UDP port scanning using nmap.
-  - Service/script scan on open ports.
-  - Save service scan results in all nmap formats to `enu/` with `service {name}`.
-  - View last open ports with `ports`.
-- **Web Module**: Entry point for future web exploitation modules, with its own prompt and options.
-- **Help System**: `help` command lists all commands and explains workspace/workflow usage.
-- **Autocomplete**: Tab-completion for global options and system command file/dir arguments.
+- **HTTP Requests**: Perform GET, POST, HEAD, and OPTIONS requests to the set URL. View status codes, headers, and response bodies.
+- **Spidering**: Crawl the set URL, parse `robots.txt` for directories, and recursively download HTML, CSS, JS, and extra files. Detects possible login pages and attempts logins with default and user-supplied credentials.
+- **Login Automation**: Detects login forms and attempts login using a prioritized list of credentials. Shows HTTP status code, headers, cookies, and redirect information for each attempt.
+- **Credential Management**: Add your own credentials with `add_creds <user> <pass>`. These are prioritized in login attempts and used by the `login` command.
+- **Comment Extraction**: Extract and highlight comments from HTML, CSS, JS, and extra files (e.g., `robots.txt`, `sitemap.xml`).
+- **File Browsing**: View all downloaded HTML, CSS, JS, and extra files with syntax highlighting for comments and scripts.
+- **Tab Completion**: Tab-complete all commands, options, and filenames for the `cat` command.
+- **User Experience**: Colorful output, improved help menu, and system command passthrough.
 
-## Usage
+## Commands
 
-1. **Initialize Workflow**
-   ```
-   init
-   ```
-   This creates `enu`, `files`, `exploits`, `loot` in the project root and `logs/workspace` for logs/state.
+- `set <option> <value>`: Set an option (`url`, `domain`).
+- `options`: Show current options.
+- `http_get`, `http_post`, `http_head`, `http_options`: Make HTTP requests to the set URL.
+- `spider`: Crawl the set URL, save files, detect login pages, and attempt logins.
+- `login`: Attempt login on the set URL using only user-added credentials.
+- `add_creds <user> <pass>`: Add credentials for login attempts (prioritized over defaults).
+- `html`, `css`, `js`, `extras`: Show all downloaded files of each type, with URLs and highlighted comments.
+- `comments`: Show all comments from HTML, CSS, JS, and extras files.
+- `ls`, `ls -la`, `cat <file>`, `tree`: File system commands.
+- `!<cmd>`: Run any system command (e.g., `!whoami`).
+- `clear`: Clear the terminal.
+- `help`, `?`: Show help menu.
+- `exit`, `back`: Return to main console.
 
-2. **Set Global Options**
-   ```
-   set target 192.168.1.1
-   set url http://example.com
-   set domain example.com
-   ```
-   Use tab for option autocomplete.
+## Usage Notes
 
-3. **Run System Commands**
-   ```
-   ls
-   cd enu
-   git status
-   searchsploit windows smb
-   ```
-   Tab-completion works for file/dir arguments. Output is shown as in a normal shell.
-
-4. **Portscan Module**
-   ```
-   portscan
-   set target 192.168.1.1
-   scan
-   ports
-   service myscan
-   exit
-   ```
-   - `scan` runs a port scan.
-   - `service {name}` runs a service/script scan and saves results as `enu/{name}.nmap/.xml/.gnmap`.
-
-5. **Web Module**
-   ```
-   web
-   set url http://example.com
-   options
-   exit
-   ```
-
-6. **Workspace Management**
-   ```
-   workspace
-   ```
-   Shows the current workspace path and status.
-
-## Directory Structure
-
-- `enu/`, `files/`, `exploits/`, `loot/` — workflow directories in project root
-- `logs/workspace/` — all logs and persistent state
-- `logs/workspace/c4rc3l_state.json` — global options and portscan results
-
-## Extending
-- Add new modules in the `modules/` directory and integrate via the main console.
-- System command support is easily extensible by adding to the `allowed` list.
+- Set the target URL first: `set url http://example.com`
+- Use `spider` to crawl and enumerate files and login forms.
+- Use `add_creds <user> <pass>` to add your own credentials for login attempts.
+- Use `login` to attempt login with only your added credentials.
+- All login attempts display the HTTP status code for transparency.
 
 ## Requirements
-- Python 3.7+
-- `colorama` (for colored output)
-- `nmap` (for port scanning)
-- `searchsploit` (optional, for exploit-db integration)
 
-## Author
-- Developed by 0xc4rc3l
+- Python 3.7+
+- `requests`, `colorama`, `readline`, `bs4` (BeautifulSoup4)
+
+Install dependencies:
+
+```
+pip install requests colorama readline beautifulsoup4
+```
 
 ---
 
-For more details, see the code and use the `help` command in the console.
+For more details, see the code in `modules/web.py`.
